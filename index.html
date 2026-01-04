@@ -1,256 +1,191 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reino das Tenebras Insetas</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vespera: Mobile Edition</title>
     <style>
-        body {
-            margin: 0;
-            background: #000;
+        body { margin: 0; background: #0a0a0c; overflow: hidden; font-family: sans-serif; user-select: none; }
+        canvas { display: block; background: #16161d; touch-action: none; }
+        
+        /* Estilo dos Controles Mobile */
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 30px;
+            box-sizing: border-box;
+            pointer-events: none;
+        }
+        .btn {
+            width: 70px;
+            height: 70px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            color: white;
+            font-weight: bold;
+            pointer-events: auto;
+            touch-action: manipulation;
         }
-        canvas {
-            border: 2px solid #2d3a5f;
-            background: #1a1a2e;
-        }
+        .btn:active { background: rgba(255, 255, 255, 0.4); }
+        .d-pad { display: flex; gap: 15px; }
+        .actions { display: flex; gap: 15px; }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="800" height="450"></canvas>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="controls">
+        <div class="d-pad">
+            <div class="btn" id="btnLeft">←</div>
+            <div class="btn" id="btnRight">→</div>
+        </div>
+        <div class="actions">
+            <div class="btn" id="btnAttack" style="background: rgba(255, 0, 0, 0.2);">X</div>
+            <div class="btn" id="btnJump">↑</div>
+        </div>
+    </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // Protagonista
+        // Ajuste de ecrã inteiro
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
         const player = {
-            x: 100,
-            y: 200,
-            width: 20,
-            height: 30,
-            speed: 3,
-            color: '#c2c8e4',
-            isDashing: false,
-            dashSpeed: 8,
-            dashTime: 0,
+            x: 50, y: 100,
+            width: 30, height: 45,
+            velX: 0, velY: 0,
+            speed: 6,
+            jumpForce: -13,
+            gravity: 0.6,
+            isGrounded: false,
             isAttacking: false,
-            attackTime: 0,
-            attackRange: 30,
-            attackColor: 'rgba(255, 200, 100, 0.8)',
-            attackDamage: 1 // Dano do ataque
+            attackTimer: 0,
+            facingRight: true
         };
 
-        // Mobs (insetos inimigos)
-        let mobs = [
-            { x: 300, y: 390, width: 25, height: 25, color: '#d64545', speed: 1, isStunned: false, stunTime: 0, health: 2 },
-            { x: 600, y: 270, width: 25, height: 25, color: '#d64545', speed: 1.2, isStunned: false, stunTime: 0, health: 3 }
-        ];
-
-        // Ambiente (cidade esquecida)
         const platforms = [
-            { x: 0, y: 420, width: 800, height: 30, color: '#2d3a5f' },
-            { x: 200, y: 350, width: 150, height: 20, color: '#2d3a5f' },
-            { x: 500, y: 300, width: 150, height: 20, color: '#2d3a5f' }
+            { x: 0, y: canvas.height - 100, w: 2000, h: 100 }, // Chão longo
+            { x: 300, y: canvas.height - 250, w: 200, h: 20 },
+            { x: 600, y: canvas.height - 350, w: 150, h: 20 }
         ];
 
-        // Partículas de poeira
-        const dustParticles = [];
-        for (let i = 0; i < 30; i++) {
-            dustParticles.push({
-                x: Math.random() * 800,
-                y: Math.random() * 450,
-                size: Math.random() * 2,
-                speed: Math.random() * 0.2
-            });
-        }
+        const input = { left: false, right: false, jump: false, attack: false };
 
-        // Controles
-        const keys = {
-            left: false,
-            right: false,
-            up: false,
-            dash: false,
-            attack: false
+        // --- LÓGICA DE INPUT (TECLADO + TOUCH) ---
+        const setupButton = (id, key) => {
+            const el = document.getElementById(id);
+            el.addEventListener('touchstart', (e) => { e.preventDefault(); input[key] = true; });
+            el.addEventListener('touchend', (e) => { e.preventDefault(); input[key] = false; });
+            el.addEventListener('mousedown', () => input[key] = true);
+            el.addEventListener('mouseup', () => input[key] = false);
         };
 
-        document.addEventListener('keydown', (e) => {
-            switch(e.key) {
-                case 'ArrowLeft': keys.left = true; break;
-                case 'ArrowRight': keys.right = true; break;
-                case 'ArrowUp': keys.up = true; break;
-                case 'Shift': keys.dash = true; break;
-                case ' ': keys.attack = true; break; // Barra de espaço para atacar
-            }
+        setupButton('btnLeft', 'left');
+        setupButton('btnRight', 'right');
+        setupButton('btnJump', 'jump');
+        setupButton('btnAttack', 'attack');
+
+        window.addEventListener('keydown', e => {
+            if(e.code === 'ArrowLeft') input.left = true;
+            if(e.code === 'ArrowRight') input.right = true;
+            if(e.code === 'Space') input.jump = true;
+            if(e.code === 'KeyX') input.attack = true;
+        });
+        window.addEventListener('keyup', e => {
+            if(e.code === 'ArrowLeft') input.left = false;
+            if(e.code === 'ArrowRight') input.right = false;
+            if(e.code === 'Space') input.jump = false;
+            if(e.code === 'KeyX') input.attack = false;
         });
 
-        document.addEventListener('keyup', (e) => {
-            switch(e.key) {
-                case 'ArrowLeft': keys.left = false; break;
-                case 'ArrowRight': keys.right = false; break;
-                case 'ArrowUp': keys.up = false; break;
-                case 'Shift': keys.dash = false; player.isDashing = false; break;
-                case ' ': keys.attack = false; break;
-            }
-        });
-
-        // Verifica colisão
-        function checkCollision(rect1, rect2) {
-            return rect1.x < rect2.x + rect2.width &&
-                   rect1.x + rect1.width > rect2.x &&
-                   rect1.y < rect2.y + rect2.height &&
-                   rect1.y + rect1.height > rect2.y;
-        }
-
-        // Atualização do jogo
         function update() {
-            // Movimento do jogador
-            if (keys.dash) {
-                player.isDashing = true;
-                player.dashTime = 10;
-            }
-
-            if (player.isDashing && player.dashTime > 0) {
-                player.x += keys.left ? -player.dashSpeed : keys.right ? player.dashSpeed : 0;
-                player.dashTime--;
-            } else if (!player.isAttacking) {
-                player.x += keys.left ? -player.speed : keys.right ? player.speed : 0;
-            }
-
-            // Ataque
-            if (keys.attack && !player.isAttacking) {
-                player.isAttacking = true;
-                player.attackTime = 5;
-
-                // Definir área de ataque
-                const attackHitbox = {
-                    x: keys.right ? player.x + player.width : player.x - player.attackRange,
-                    y: player.y,
-                    width: player.attackRange,
-                    height: player.height
-                };
-
-                // Aplica dano e stun nos mobs colididos
-                mobs = mobs.map(mob => {
-                    if (checkCollision(attackHitbox, mob)) {
-                        mob.health -= player.attackDamage;
-                        mob.isStunned = true;
-                        mob.stunTime = 30;
-                        mob.color = '#f1c40f'; // Cor amarela durante stun
-                    }
-                    return mob;
-                }).filter(mob => mob.health > 0); // Remove mobs com vida <= 0
-            }
-
-            if (player.isAttacking && player.attackTime > 0) {
-                player.attackTime--;
+            // Movimento
+            if (input.left) {
+                player.velX = -player.speed;
+                player.facingRight = false;
+            } else if (input.right) {
+                player.velX = player.speed;
+                player.facingRight = true;
             } else {
-                player.isAttacking = false;
+                player.velX *= 0.8;
             }
 
-            // Limites da tela
-            if (player.x < 0) player.x = 0;
-            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+            // Gravidade
+            player.velY += player.gravity;
 
-            // Atualiza mobs
-            mobs.forEach(mob => {
-                if (mob.isStunned) {
-                    mob.stunTime--;
-                    if (mob.stunTime <= 0) {
-                        mob.isStunned = false;
-                        mob.color = '#d64545'; // Cor original
-                    }
-                } else {
-                    // Movimento do mob em direção ao jogador
-                    if (mob.x < player.x) mob.x += mob.speed;
-                    else mob.x -= mob.speed;
-                }
+            // Pulo
+            if (input.jump && player.isGrounded) {
+                player.velY = player.jumpForce;
+                player.isGrounded = false;
+            }
 
-                // Colisão com plataformas (mantém mob na plataforma)
-                platforms.forEach(plat => {
-                    if (mob.y + mob.height < plat.y && mob.x + mob.width > plat.x && mob.x < plat.x + plat.width) {
-                        mob.y = plat.y - mob.height;
-                    }
-                });
-            });
+            player.x += player.velX;
+            player.y += player.velY;
 
-            // Atualiza poeira
-            dustParticles.forEach(p => {
-                p.y += p.speed;
-                if (p.y > canvas.height) p.y = 0;
-            });
-        }
-
-        // Desenho
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Poeira
-            dustParticles.forEach(p => {
-                ctx.fillStyle = 'rgba(200, 200, 220, 0.5)';
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // Plataformas
+            // Colisão com plataformas
+            player.isGrounded = false;
             platforms.forEach(plat => {
-                ctx.fillStyle = plat.color;
-                ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
-                // Detalhes das ruínas
-                ctx.fillStyle = '#1e2749';
-                ctx.fillRect(plat.x + 10, plat.y - 5, plat.width - 20, 5);
+                if (player.x < plat.x + plat.w && player.x + player.width > plat.x &&
+                    player.y + player.height > plat.y && player.y + player.height < plat.y + 15) {
+                    if (player.velY > 0) {
+                        player.isGrounded = true;
+                        player.velY = 0;
+                        player.y = plat.y - player.height;
+                    }
+                }
             });
 
             // Ataque
+            if (input.attack && !player.isAttacking) {
+                player.isAttacking = true;
+                player.attackTimer = 12;
+            }
+            if (player.attackTimer > 0) player.attackTimer--;
+            else player.isAttacking = false;
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.fillStyle = "#16161d";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Chão e Plataformas
+            ctx.fillStyle = "#2e2e35";
+            platforms.forEach(plat => ctx.fillRect(plat.x, plat.y, plat.w, plat.h));
+
+            // Efeito de Ataque
             if (player.isAttacking) {
-                ctx.fillStyle = player.attackColor;
-                if (keys.right) {
-                    ctx.fillRect(player.x + player.width, player.y, player.attackRange, player.height);
-                } else {
-                    ctx.fillRect(player.x - player.attackRange, player.y, player.attackRange, player.height);
-                }
+                ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+                let attackX = player.facingRight ? player.x + player.width : player.x - 40;
+                ctx.fillRect(attackX, player.y + 10, 40, 20);
             }
 
-            // Protagonista
-            ctx.fillStyle = player.color;
+            // Personagem (Estilo Hollow Knight)
+            ctx.fillStyle = "white";
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "white";
             ctx.fillRect(player.x, player.y, player.width, player.height);
-            // "Armadura"
-            ctx.fillStyle = '#a8acc9';
-            ctx.fillRect(player.x + 5, player.y, 10, 5);
-            ctx.fillRect(player.x + 2, player.y + 25, 16, 5);
-
-            // Mobs e barra de vida
-            mobs.forEach(mob => {
-                // Desenha mob
-                ctx.fillStyle = mob.color;
-                ctx.fillRect(mob.x, mob.y, mob.width, mob.height);
-                // Olhos do mob
-                ctx.fillStyle = '#000';
-                ctx.beginPath();
-                ctx.arc(mob.x + 8, mob.y + 8, 3, 0, Math.PI * 2);
-                ctx.arc(mob.x + 17, mob.y + 8, 3, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Barra de vida
-                ctx.fillStyle = '#34495e';
-                ctx.fillRect(mob.x - 2, mob.y - 8, mob.width + 4, 4);
-                ctx.fillStyle = '#2ecc71';
-                ctx.fillRect(mob.x - 2, mob.y - 8, (mob.width + 4) * (mob.health / 3), 4); // Vida máxima 3
-            });
+            ctx.shadowBlur = 0;
         }
 
-        // Loop do jogo
-        function gameLoop() {
-            update();
-            draw();
-            requestAnimationFrame(gameLoop);
-        }
-
-        gameLoop();
+        update();
     </script>
 </body>
 </html>
