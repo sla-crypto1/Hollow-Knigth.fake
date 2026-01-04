@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hollow Knight Mobile</title>
+    <style>
+        body { margin: 0; background: #1a1a1a; overflow: hidden; touch-action: none; font-family: sans-serif; }
+        canvas { background: #2c3e50; display: block; margin: 0 auto; }
+        
+        /* Layout dos Controles Touch */
+        .controls {
+            position: fixed; bottom: 20px; width: 100%;
+            display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box;
+            pointer-events: none; /* Deixa cliques passarem para os botões específicos */
+        }
+        .btn {
+            width: 60px; height: 60px; background: rgba(255,255,255,0.2);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: bold; pointer-events: auto; user-select: none;
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+        .btn:active { background: rgba(255,255,255,0.5); }
+        .d-pad { display: flex; gap: 10px; }
+        .actions { display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="controls">
+        <div class="d-pad">
+            <div class="btn" id="btnLeft">←</div>
+            <div class="btn" id="btnRight">→</div>
+        </div>
+        <div class="actions">
+            <div class="btn" id="btnAttack" style="background: rgba(255, 0, 0, 0.3);">Z</div>
+            <div class="btn" id="btnDash" style="background: rgba(0, 255, 255, 0.3);">X</div>
+            <div class="btn" id="btnJump">↑</div>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Ajuste de tela para Mobile
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const config = { gravity: 0.8, jumpForce: -14, speed: 5, dashForce: 12 };
+let player = { 
+    x: 50, y: 100, w: 30, h: 45, velX: 0, velY: 0, 
+    isGrounded: false, direction: 1, isDashing: false, isAttacking: false 
+};
+
+// Estado dos botões
+const touch = { left: false, right: false };
+
+// Eventos de Touch
+function setupBtn(id, actionOn, actionOff) {
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); actionOn(); });
+    el.addEventListener('touchend', (e) => { e.preventDefault(); actionOff(); });
+}
+
+setupBtn('btnLeft', () => touch.left = true, () => touch.left = false);
+setupBtn('btnRight', () => touch.right = true, () => touch.right = false);
+setupBtn('btnJump', () => { if(player.isGrounded) player.velY = config.jumpForce; }, () => {});
+setupBtn('btnDash', () => { 
+    if(!player.isDashing) {
+        player.isDashing = true;
+        player.velX = player.direction * config.dashForce;
+        setTimeout(() => player.isDashing = false, 200);
+    }
+}, () => {});
+setupBtn('btnAttack', () => {
+    player.isAttacking = true;
+    setTimeout(() => player.isAttacking = false, 150);
+}, () => {});
+
+function update() {
+    // Movimento via Touch
+    if (!player.isDashing) {
+        if (touch.left) { player.velX = -config.speed; player.direction = -1; }
+        else if (touch.right) { player.velX = config.speed; player.direction = 1; }
+        else { player.velX *= 0.8; }
+    }
+
+    player.velY += config.gravity;
+    player.x += player.velX;
+    player.y += player.velY;
+
+    // Chão simples
+    if (player.y + player.h > canvas.height - 100) {
+        player.y = canvas.height - 100 - player.h;
+        player.velY = 0;
+        player.isGrounded = true;
+    } else {
+        player.isGrounded = false;
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Chão
+    ctx.fillStyle = "#333";
+    ctx.fillRect(0, canvas.height - 100, canvas.width, 100);
+
+    // Player
+    ctx.fillStyle = player.isDashing ? "cyan" : "white";
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+
+    // Ataque
+    if (player.isAttacking) {
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.fillRect(player.direction === 1 ? player.x + player.w : player.x - 30, player.y + 10, 30, 20);
+    }
+
+    requestAnimationFrame(() => { update(); draw(); });
+}
+
+draw();
+</script>
+</body>
+</html>
